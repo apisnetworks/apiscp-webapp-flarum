@@ -45,6 +45,32 @@
 			)
 		);
 
+		public function install(string $hostname, string $path = '', array $opts = array()): bool
+		{
+			return parent::install($hostname, $path, $opts);
+		}
+
+		public function get_version(string $hostname, string $path = ''): ?string
+		{
+			return parent::get_version($hostname, $path);
+		}
+
+		public function valid(string $hostname, string $path = ''): bool
+		{
+			return parent::valid($hostname, $path);
+		}
+
+		public function update_all(string $hostname, string $path = '', string $version = null): bool
+		{
+			return parent::update_all($hostname, $path, $version);
+		}
+
+		public function update(string $hostname, string $path = '', string $version = null): bool
+		{
+			return parent::update($hostname, $path, $version);
+		}
+
+
 		protected function postInstall(string $hostname, string $path): bool
 		{
 			$approot = $this->getAppRoot($hostname, $path);

@@ -26,9 +26,7 @@
 		const FEAT_RECOVERY = false;
 		const APP_ROOT_DEPTH = 1;
 
-		const TRANSIENT_RECONFIGURABLES = [
-			'debug', 'maintenance'
-		];
+		const TRANSIENT_RECONFIGURABLES = [];
 
 		public function display(): bool
 		{
