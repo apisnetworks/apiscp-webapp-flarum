@@ -18,9 +18,9 @@
 
 	Security is important with any application, so extra steps are taken to reduce
 	the risk of hackers. By default **Maximum** Fortification is enabled. This will
-	prevent additional plugins from being loaded into Flarum.
+	prevent additional extensions from being added into {{ $appname }}.
 
-	To enable or modify plugins, change the Fortification mode to **Minimum**.
+	To enable or modify extensions, change the Fortification mode to **Minimum**.
 
 	Here's how to do it:
 

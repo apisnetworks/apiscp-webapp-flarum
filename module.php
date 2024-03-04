@@ -32,6 +32,9 @@
 		protected $aclList = array(
 			'min' => array(
 				'storage',
+				'vendor',
+				'composer.json',
+				'composer.lock'
 			),
 			'max' => array(
 				'storage/cache',

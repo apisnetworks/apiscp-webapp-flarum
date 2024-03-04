@@ -26,7 +26,9 @@
 		const FEAT_RECOVERY = false;
 		const APP_ROOT_DEPTH = 1;
 
-		const TRANSIENT_RECONFIGURABLES = [];
+		const TRANSIENT_RECONFIGURABLES = [
+			'debug', 'extension-manager'
+		];
 
 		public function display(): bool
 		{
