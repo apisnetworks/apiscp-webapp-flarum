@@ -34,7 +34,8 @@
 				'storage',
 				'vendor',
 				'composer.json',
-				'composer.lock'
+				'composer.lock',
+				'public/assets'
 			),
 			'max' => array(
 				'storage/cache',
@@ -44,7 +45,8 @@
 				'storage/logs',
 				'storage/sessions',
 				'storage/tmp',
-				'storage/views'
+				'storage/views',
+				'public/assets'
 			)
 		);
 
