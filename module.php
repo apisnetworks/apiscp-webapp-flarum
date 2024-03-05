@@ -11,7 +11,10 @@
 	 *  +------------------------------------------------------------+
 	 */
 
+	use Module\Support\Webapps;
 	use Module\Support\Webapps\App\Type\Flarum\Handler;
+	use Module\Support\Webapps\ComposerMetadata;
+	use Module\Support\Webapps\ComposerWrapper;
 	use Opcenter\Auth\Password;
 	use Opcenter\Auth\Shadow;
 
@@ -136,6 +139,104 @@
 			return parent::parseInstallOptions($options, $hostname, $path);
 		}
 
+		public function uninstall_plugin(string $hostname, string $path, string $plugin, bool $force = false): bool
+		{
+			$approot = $this->getAppRoot($hostname, $path);
+			$composer = ComposerWrapper::instantiateContexted($this->getAuthContextFromDocroot($approot));
+			if ($force && !$this->disable_plugin($hostname, $path, $plugin)) {
+				return false;
+			}
+			$ret = $composer->exec($approot, 'remove %s', [$plugin]);
+
+			return $ret['success'] ?: error("Failed to remove plugin: %s", coalesce($ret['stderr'], $ret['stdout']));
+		}
+
+		public function install_plugin(string $hostname, string $path, string $plugin, string $version = '*'): bool
+		{
+			$approot = $this->getAppRoot($hostname, $path);
+			$composer = ComposerWrapper::instantiateContexted($this->getAuthContextFromDocroot($approot));
+
+			$ret = $composer->exec($approot, 'require %s:%s', [$plugin, $version]);
+
+			return $ret['success'] && $this->enable_plugin($hostname, $path, $plugin) ?:
+				error("Failed to install plugin: %s", coalesce($ret['stderr'], $ret['stdout']));
+		}
+
+		public function plugin_status(string $hostname, string $path = '', string $plugin = null)
+		{
+			$approot = $this->getAppRoot($hostname, $path);
+			$pdo = Webapps::connectorFromCredentials($dbCfg = $this->db_config($hostname, $path));
+			$activeExtensions = array_flip(json_decode(
+				$pdo->query("SELECT REPLACE(`value`, '-', '/') AS `value` FROM `{$dbCfg['prefix']}settings` WHERE `key` = 'extensions_enabled'")->fetchObject()?->value
+			));
+
+			$meta = ComposerMetadata::readFrozen($this->getAuthContextFromDocroot($approot), $approot);
+			$flarumPackages = array_filter((array)$meta->packages(),
+				fn($package) =>
+					isset($activeExtensions[$package['name']]) ||
+					$package['name'] === $plugin ||
+					$plugin === null && str_starts_with($package['name'], 'flarum/')
+			);
+			$pluginmeta = array_build(
+				$flarumPackages,
+				fn($i, $package) => [
+					$package['name'],
+					[
+						'version' => $package['version_normalized'],
+						'active'  => isset($activeExtensions[$package['name']])
+					]
+				],
+			);
+
+			unset($pluginmeta['flarum/core']);
+
+			return $plugin ? $pluginmeta[$plugin] ?? error("unknown plugin `%s'", $plugin) : $pluginmeta;
+		}
+
+		/**
+		 * Disable plugin
+		 *
+		 * @param string $hostname
+		 * @param string $path
+		 * @param string $plugin
+		 * @return bool
+		 */
+		public function disable_plugin(string $hostname, string $path, string $plugin): bool
+		{
+			$approot = $this->getAppRoot($hostname, $path);
+			$composer = ComposerWrapper::instantiateContexted($this->getAuthContextFromDocroot($approot));
+			$ret = $composer->direct($approot, self::BINARY_NAME . ' --no-ansi extension:disable %s', [
+				str_replace('/', '-', $plugin)
+			]);
+
+			if (str_contains($ret['stderr'], "There are no extensions")) {
+				warn($ret['stderr']);
+			}
+			return $ret['success'] ?: error("Unable to disable plugin %(plugin)s: %(err)s",
+				['plugin' => $plugin, 'err' => coalesce($ret['stderr'], $ret['stdout'])]);
+		}
+
+		/**
+		 * Enable plugin
+		 *
+		 * @param string $hostname
+		 * @param string $path
+		 * @param string $plugin
+		 * @return bool
+		 */
+		public function enable_plugin(string $hostname, string $path, string $plugin): bool
+		{
+			$approot = $this->getAppRoot($hostname, $path);
+			$composer = ComposerWrapper::instantiateContexted($this->getAuthContextFromDocroot($approot));
+			$ret = $composer->direct($approot, self::BINARY_NAME . ' --no-ansi extension:enable %s', [str_replace('/', '-', $plugin)]);
+			if (str_contains($ret['stderr'], "There are no extensions")) {
+				$ret['success'] = false;
+			}
+
+			return $ret['success'] ?: error("Unable to enable plugin %(plugin)s: %(err)s",
+				['plugin' => $plugin, 'err' => coalesce($ret['stderr'], $ret['stdout'])]);
+		}
+
 		protected function setConfiguration(string $approot, string $docroot, array $config)
 		{
 			$envcfg = (new \Opcenter\Provisioning\ConfigurationWriter('@webapp(' . $this->getAppName() . ')::templates.env',
@@ -148,7 +249,7 @@
 		public function get_admin(string $hostname, string $path = ''): ?string
 		{
 			$db = $this->db_config($hostname, $path);
-			$mysql = WebappsAlias::connectorFromCredentials($db);
+			$mysql = Webapps::connectorFromCredentials($db);
 			$query = "SELECT username FROM {$db['prefix']}users JOIN {$db['prefix']}group_user ON ({$db['prefix']}group_user.user_id = {$db['prefix']}users.id) WHERE group_id = 1 ORDER BY {$db['prefix']}users.id DESC LIMIT 1";
 			$rs = $mysql->query($query);
 			return $rs->rowCount() === 1 ? $rs->fetchObject()->username : null;
@@ -169,18 +270,21 @@
 				return error('failed to determine %s', $this->getAppName());
 			}
 
-			$code = '$db = (include("./config.php"))["database"]; ' .
-				'print serialize(array("user" => $db["username"], "password" => $db["password"], "db" => $db["database"], ' .
-				'"host" => $db["host"], "prefix" => $db["prefix"], "type" => $db["driver"]));';
-			$cmd = 'cd %(path)s && php -d mysqli.default_socket=' . escapeshellarg(ini_get('mysqli.default_socket')) . ' -r %(code)s';
-			$ret = $this->pman_run($cmd, array('path' => $approot, 'code' => $code));
-
-			if (!$ret['success']) {
-				return error("failed to obtain Laravel configuration for `%s'", $approot);
+			try {
+				$cfg = Webapps\App\Type\Flarum\Walker::instantiateContexted($this->getAuthContextFromDocroot($approot), ["{$approot}/config.php"])->get('database');
+			} catch (\ArgumentError) {
+				return error("Failed to obtain %(app)s configuration for `%(path)s'", ['app' => static::APP_NAME, 'path' => $approot]);
 			}
-			$data = \Util_PHP::unserialize($ret['stdout']);
 
-			return $data;
+			return [
+				'type' => $cfg['driver'] ?? 'mysql',
+				'host' => $cfg['host'],
+				'port' => $cfg['port'],
+				'db'   => $cfg['database'],
+				'user' => $cfg['username'],
+				'password' => $cfg['password'],
+				'prefix' => $cfg['prefix']
+			];
 		}
 
 		/**
@@ -230,18 +334,17 @@
 			if ($unrecognized = array_diff_key($fields, $valid)) {
 				return error("Unrecognized fields: %s", implode(array_keys($unrecognized)));
 			}
-			$match = array_intersect_key($valid, $fields);
-			$fields = array_combine(array_values($match), array_intersect_key($fields, $match));
-			if (!$fields) {
+
+			if (!$match = array_intersect_key($valid, $fields)) {
 				return warn("No fields updated");
 			}
 
+			$fields = array_intersect_key($fields, $match);
 			$db = $this->db_config($hostname, $path);
 			$admin = $this->get_admin($hostname, $path);
-
-			$mysql = WebappsAlias::connectorFromCredentials($db);
+			$mysql = Webapps::connectorFromCredentials($db);
 			$query = "UPDATE {$db['prefix']}users SET " .
-				implode(', ', array_key_map(static fn($k, $v) => $k . ' = ' . $mysql->quote($v), $fields)) . " WHERE username = " . $mysql->quote($admin);
+				implode(', ', array_key_map(static fn($k, $v) => $valid[$k] . ' = ' . $mysql->quote($v), $fields)) . " WHERE username = " . $mysql->quote($admin);
 
 			$rs = $mysql->query($query);
 			return $rs->rowCount() > 0 ? true : error("Failed to update admin `%(admin)s', error: %(err)s",

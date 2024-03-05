@@ -16,7 +16,6 @@
 	use Module\Support\Webapps\App\Reconfigurator;
 	use Module\Support\Webapps\App\Type\Unknown\Handler as Unknown;
 	use Module\Support\Webapps\ComposerMetadata;
-	use Module\Support\Webapps\ComposerWrapper;
 	use Module\Support\Webapps\Contracts\DeferredReconfiguration;
 	use Module\Support\Webapps\Contracts\ReconfigurableProperty;
 	use Module\Support\Webapps\Traits\WebappUtilities;
@@ -41,9 +40,7 @@
 
 		public function apply(mixed &$val): bool
 		{
-			$composer = ComposerWrapper::instantiateContexted($this->getAuthContextFromDocroot($approot = $this->app->getAppRoot()));
-			$ret = $composer->exec($approot, '%s %s:*', [$val ? 'require' : 'remove', $this->getPackageName()]);
-			return $ret['success'] ?: error("Failed to add package: %s", coalesce($ret['stderr'], $ret['stdout']));
+			return $this->{'flarum_' . ($val ? 'install' : 'uninstall') . '_plugin'}($this->app->getHostname(), $this->app->getPath(), $this->getPackageName());
 		}
 
 		public function getValue()
