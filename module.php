@@ -243,7 +243,9 @@
 				\Opcenter\SiteConfiguration::shallow($this->getAuthContext())))
 				->compile($config);
 
-			return $this->file_put_file_contents("{$approot}/.env", (string)$envcfg) && $this->file_chmod("{$approot}/.env", 600);
+			return $this->file_put_file_contents("{$approot}/.env", (string)$envcfg) &&
+				$this->file_chmod("{$approot}/.env", 600) &&
+				$this->file_chown("{$approot}/.env", $this->getDocrootUser($approot));
 		}
 
 		public function get_admin(string $hostname, string $path = ''): ?string
