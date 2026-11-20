@@ -49,7 +49,7 @@
 				return null;
 			}
 			$composer = ComposerMetadata::readFrozen($this->getAuthContextFromDocroot($approot = $this->app->getAppRoot()), $approot);
-			return (bool)array_first($composer['packages'], fn($p) => $p['name'] === $this->getPackageName());
+			return (bool)\Illuminate\Support\Arr::first($composer['packages'], fn($p) => $p['name'] === $this->getPackageName());
 		}
 
 
